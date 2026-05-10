@@ -1,0 +1,40 @@
+[build-system]
+requires = ["setuptools>=75.8", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "hello-mcp"
+version = "0.1.0"
+description = "FastMCP 示例项目集合"
+requires-python = ">=3.10"
+dependencies = [
+    "beautifulsoup4>=4.14.3",
+    "dashscope>=1.25.2",
+    "fastmcp>=2.13.1",
+    "openpyxl>=3.1.5",
+    "pandas>=2.3.3",
+    "playwright>=1.57.0",
+    "requests>=2.32.5",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-mock>=3.14",
+    "pytest-asyncio>=0.24",
+    "ruff>=0.4",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
