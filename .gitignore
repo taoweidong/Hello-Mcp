@@ -36,9 +36,14 @@ ENV/
 .coverage
 htmlcov/
 
-# Generated artifacts
+# 环境与密钥
+.env
+.env.local
+
+# 生成产物（不要用全局 *.json，否则会吞掉正常的配置文件）
 *.xlsx
-*.json
+/douban_*.json
+/legacy/*.json
 
 # Lock files (optional, uv.lock can be committed)
 # uv.lock

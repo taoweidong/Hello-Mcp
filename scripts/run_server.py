@@ -1,6 +1,25 @@
-"""统一 MCP 服务器启动脚本"""
+"""统一 MCP 服务器启动脚本
 
+新增服务器只需两步：在 hello_mcp/servers/ 下建模块（定义 mcp 与 PORT），
+再把名字登记到下面的 SERVER_MODULES。端口与说明一律取自模块自身。
+"""
+
+import importlib
 import sys
+
+SERVER_MODULES = {
+    "qwen": "hello_mcp.servers.qwen_agent",
+    "tmdb": "hello_mcp.servers.tmdb_server",
+    "weather": "hello_mcp.servers.weather_agent",
+}
+
+
+def load_server(name: str):
+    """按名字导入服务器模块"""
+    module = importlib.import_module(SERVER_MODULES[name])
+    if not hasattr(module, "mcp"):
+        raise AttributeError(f"模块 {SERVER_MODULES[name]} 未定义 mcp 对象")
+    return module
 
 
 def print_usage():
@@ -8,9 +27,10 @@ def print_usage():
     print("用法：python scripts/run_server.py <服务器名称>")
     print()
     print("可用服务器：")
-    print("  qwen     - Qwen AI 聊天 + 代码审查 (端口 8000)")
-    print("  tmdb     - TMDB 电影信息服务 (端口 8080)")
-    print("  weather  - 天气查询服务 (端口 8001)")
+    for name, module_path in SERVER_MODULES.items():
+        module = importlib.import_module(module_path)
+        summary = (module.__doc__ or "").strip().splitlines()[0] if module.__doc__ else ""
+        print(f"  {name:<8} - {summary} (端口 {module.PORT})")
     print()
     print("示例：")
     print("  python scripts/run_server.py qwen")
@@ -23,26 +43,17 @@ def main():
 
     server_name = sys.argv[1].lower()
 
-    servers = {
-        "qwen": "hello_mcp.servers.qwen_agent",
-        "tmdb": "hello_mcp.servers.tmdb_server",
-        "weather": "hello_mcp.servers.weather_agent",
-    }
-
-    if server_name not in servers:
+    if server_name not in SERVER_MODULES:
         print(f"错误：未知的服务器名称 '{server_name}'")
         print()
         print_usage()
         sys.exit(1)
 
-    import importlib
+    module = load_server(server_name)
+    port = module.PORT
 
-    module = importlib.import_module(servers[server_name])
-
-    if hasattr(module, "mcp"):
-        port = {"qwen": 8000, "tmdb": 8080, "weather": 8001}[server_name]
-        print(f"启动 {server_name} 服务器 (端口 {port})...")
-        module.mcp.run(transport="http", host="127.0.0.1", port=port, path="/mcp")
+    print(f"启动 {server_name} 服务器 (端口 {port})...")
+    module.mcp.run(transport="http", host="127.0.0.1", port=port, path="/mcp")
 
 
 if __name__ == "__main__":

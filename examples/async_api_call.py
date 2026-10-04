@@ -5,17 +5,15 @@ import platform
 
 from dashscope.aigc.generation import AioGeneration
 
-from hello_mcp.config import load_config
+from hello_mcp.config import load_config, require
 
 
-async def task(question: str):
+async def task(api_key: str, question: str):
     """单个异步任务"""
     print(f"发送问题：{question}")
 
-    config = load_config()
-
     response = await AioGeneration.call(
-        api_key=config.DASHSCOPE_API_KEY,
+        api_key=api_key,
         model="qwen-plus",
         messages=[
             {"role": "system", "content": "You are a helpful assistant."},
@@ -29,8 +27,10 @@ async def task(question: str):
 
 async def main():
     """主异步函数"""
+    api_key = require(load_config().dashscope_api_key, "DASHSCOPE_API_KEY")
+
     questions = ["你是谁？", "你会什么？", "天气怎么样？"]
-    tasks = [task(q) for q in questions]
+    tasks = [task(api_key, q) for q in questions]
     await asyncio.gather(*tasks)
 
 

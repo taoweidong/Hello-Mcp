@@ -4,11 +4,11 @@ from pprint import pprint
 
 from dashscope import Generation
 
-from hello_mcp.config import load_config
+from hello_mcp.config import load_config, require
 
 
 def main():
-    config = load_config()
+    api_key = require(load_config().dashscope_api_key, "DASHSCOPE_API_KEY")
 
     messages = [
         {"role": "system", "content": "You are a helpful assistant."},
@@ -19,7 +19,7 @@ def main():
     ]
 
     response = Generation.call(
-        api_key=config.DASHSCOPE_API_KEY,
+        api_key=api_key,
         model="qwen-plus",
         messages=messages,
         result_format="message",

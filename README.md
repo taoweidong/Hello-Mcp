@@ -1,117 +1,129 @@
 # Hello MCP 示例项目
 
-本项目展示了如何使用 FastMCP 框架创建各种 Agent 服务，采用标准 Python 工程结构。
+FastMCP 二次开发底座：标准 Python 工程结构 + 三个可运行的 MCP 服务器 + 一套不依赖外网的测试。
+新增服务时照抄 `src/hello_mcp/servers/tmdb_server.py` 的写法即可。
 
 ## 项目结构
 
 ```
 src/hello_mcp/
-├── config.py              # 集中配置管理
-├── utils/                 # 共享工具函数
-│   └── http_client.py     # HTTP 客户端（超时、重试）
-└── servers/
-    ├── qwen_agent.py      # Qwen AI 聊天 + 代码审查
-    ├── tmdb_server.py     # TMDB 电影信息服务
-    └── weather_agent.py   # 天气查询服务
+├── config.py              # 集中配置：load_config() 只加载，require() 声明各服务必需密钥
+├── utils/
+│   └── http_client.py     # 共享 HTTP Session（默认超时 + 429/5xx 重试）
+└── servers/               # 每个模块定义 mcp、PORT，可独立运行
+    ├── qwen_agent.py      # Qwen AI 聊天 + 代码审查   :8000
+    ├── tmdb_server.py     # TMDB 电影信息服务         :8080
+    └── weather_agent.py   # 天气查询服务             :8001
 
-examples/                  # 示例脚本
-├── sync_api_call.py       # 同步 API 调用
-├── async_api_call.py      # 异步 API 调用
-└── news_fetcher.py        # 新闻获取示例
-
-scripts/                   # 工具脚本
-└── run_server.py          # 统一启动脚本
-
-tests/                     # 测试
-├── conftest.py            # pytest 配置
-├── test_qwen_agent.py
-├── test_tmdb_server.py
-└── test_weather_agent.py
+scripts/run_server.py      # 统一启动入口（端口与说明取自服务器模块）
+examples/                  # 直接调用上游 API 的最小示例（同步/异步/新闻）
+legacy/douban_movie_scraper.py  # 遗留爬虫脚本，仅作历史参考
+tests/                     # 全部 mock 外网，可离线运行
 ```
 
 ## 快速开始
 
-### 安装依赖
-
 ```bash
-uv sync --all-extras
+uv sync --all-extras          # 安装依赖（含 dev 与 scrape）
+cp .env.example .env          # 填入需要的密钥，或改用环境变量
 ```
 
-### 配置环境变量
+每个服务器只校验自己的密钥，互不阻塞：
+
+| 服务器 | 端口 | 必需密钥 |
+|--------|------|----------|
+| qwen | 8000 | `DASHSCOPE_API_KEY` |
+| tmdb | 8080 | `TMDB_API_KEY` |
+| weather | 8001 | `OPENWEATHER_API_KEY` |
 
 ```bash
-# 阿里云 DashScope API 密钥（必需）
-DASHSCOPE_API_KEY=your_dashscope_api_key
-
-# TMDB API 密钥（TMDB 服务必需）
-TMDB_API_KEY=your_tmdb_api_key
-
-# OpenWeatherMap API 密钥（天气服务必需）
-OPENWEATHER_API_KEY=your_openweather_api_key
+uv run python scripts/run_server.py tmdb     # 由注册表启动
+uv run python -m hello_mcp.servers.qwen_agent  # 或直接跑模块
 ```
 
-### 运行 MCP 服务
+工具通过 HTTP 暴露在 `http://127.0.0.1:<port>/mcp`（streamable HTTP，需先完成 MCP initialize 握手，
+因此不建议直接 curl 裸调用）。
 
-```bash
-# 使用统一启动脚本
-python scripts/run_server.py qwen     # 端口 8000
-python scripts/run_server.py tmdb     # 端口 8080
-python scripts/run_server.py weather  # 端口 8001
+## 调用示例
 
-# 或直接运行模块
-python -m hello_mcp.servers.qwen_agent
+推荐用 FastMCP 客户端，进程内或跨进程同一套 API：
+
+```python
+import asyncio
+from fastmcp import Client
+from hello_mcp.servers.tmdb_server import mcp
+
+
+async def main():
+    async with Client(mcp) as client:  # 换成 "http://127.0.0.1:8080/mcp" 即远程调用
+        print([t.name for t in await client.list_tools()])
+        result = await client.call_tool("get_top_movies", {"n": 3})
+        print(result.structured_content["result"])
+
+
+asyncio.run(main())
 ```
 
-### 运行测试
+`tests/test_mcp_integration.py` 就是这个用法的最小可运行版本。
 
-```bash
-uv run pytest tests/ -v
+## 新增一个服务器
+
+1. 建 `src/hello_mcp/servers/my_server.py`：
+
+```python
+"""我的服务 MCP 服务器"""
+
+from fastmcp import Context, FastMCP
+
+from hello_mcp.config import load_config, require
+from hello_mcp.utils.http_client import create_session
+
+mcp = FastMCP("My Server")
+PORT = 8100
+
+http_session = create_session()
+
+
+@mcp.tool
+def hello(name: str, ctx: Context | None = None) -> dict:
+    """工具描述即 MCP 文档；返回 dict/list 可获得结构化内容"""
+    if ctx:
+        ctx.info(f"hello {name}")
+    return {"greeting": f"hello {name}"}
+
+
+if __name__ == "__main__":
+    mcp.run(transport="http", host="127.0.0.1", port=PORT, path="/mcp")
 ```
 
-### 代码质量检查
+2. 在 `scripts/run_server.py` 的 `SERVER_MODULES` 登记名字与模块路径（端口和说明自动来自模块）。
+3. 在 `tests/` 加对应用例：mock `http_session.get`（或对应 SDK），不要真实出网。
+
+约定：密钥通过 `require(load_config().xxx, "ENV_NAME")` 在工具入口取得；
+失败路径统一 `raise RuntimeError("...: {e}") from e` 以保留原因链。
+
+## 运行测试与质量检查
 
 ```bash
-# Lint 检查
+uv run pytest tests/ -v                                  # 38 个用例，全部离线
+uv run pytest tests/ --cov=src --cov-report=term-missing  # 覆盖率（当前约 96%）
 uv run ruff check .
-
-# 格式化代码
 uv run ruff format .
 ```
 
-## API 工具
+CI（`.github/workflows/ci.yml`）会依次执行 ruff check、ruff format --check 与带覆盖率的 pytest。
 
-### Qwen Agent (端口 8000)
-
-1. `ask_qwen(question: str)` - 向 Qwen 模型提问
-2. `code_review(code: str)` - 代码审查
-
-### TMDB Server (端口 8080)
-
-1. `get_top_movies(n: int)` - 获取评分最高的电影
-
-### Weather Agent (端口 8001)
-
-1. `get_current_weather(city: str)` - 获取当前天气
-2. `get_weather_forecast(city: str, days: int)` - 获取天气预报
-3. `compare_cities_weather(cities: list[str])` - 比较多个城市天气
-
-## 示例请求
-
-使用 curl 调用天气查询服务：
+Windows 终端若出现中文乱码，是控制台 GBK 显示所致，不是代码问题：
 
 ```bash
-curl -X POST http://127.0.0.1:8001/mcp \
-  -H "Content-Type: application/json" \
-  -d '{
-    "method": "get_current_weather",
-    "params": {"city": "Beijing"}
-  }'
+set PYTHONIOENCODING=utf-8   # 或 chcp 65001
 ```
 
-## Playwright 说明
+## 遗留脚本
 
-`douban_movie_scraper.py` 使用 Playwright 爬取豆瓣电影。使用前需安装浏览器：
+`legacy/douban_movie_scraper.py` 依赖 `scrape` extra（playwright/pandas/bs4/openpyxl），
+与 MCP 主线无关；使用前需安装浏览器：
 
 ```bash
-playwright install chromium
+uv run --extra scrape playwright install chromium
 ```

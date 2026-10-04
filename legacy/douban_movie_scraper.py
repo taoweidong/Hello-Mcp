@@ -20,6 +20,13 @@ from playwright.async_api import async_playwright
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# 模拟真实浏览器的 User-Agent
+USER_AGENT = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/91.0.4472.124 Safari/537.36"
+)
+
 # 目标网址
 DOUBAN_MOVIE_TOP250_URL = "https://movie.douban.com/top250"
 
@@ -40,11 +47,7 @@ async def scrape_douban_movie_top250():
             page = await browser.new_page()
 
             # 设置用户代理，模拟真实浏览器
-            await page.set_extra_http_headers(
-                {
-                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
-                }
-            )
+            await page.set_extra_http_headers({"User-Agent": USER_AGENT})
 
             all_movies = []
 
