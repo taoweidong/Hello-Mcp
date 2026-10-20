@@ -7,7 +7,7 @@ from hello_mcp.config import load_config, require
 
 def test_load_config_never_raises_when_keys_missing(monkeypatch):
     """回归 P1-1：缺失任一密钥都不应在加载阶段抛错"""
-    for name in ("DASHSCOPE_API_KEY", "TMDB_API_KEY", "OPENWEATHER_API_KEY"):
+    for name in ("DASHSCOPE_API_KEY", "TMDB_API_KEY", "OPENWEATHER_API_KEY", "NEWSAPI_KEY"):
         monkeypatch.delenv(name, raising=False)
 
     config = load_config()
@@ -15,16 +15,18 @@ def test_load_config_never_raises_when_keys_missing(monkeypatch):
     assert config.dashscope_api_key is None
     assert config.tmdb_api_key is None
     assert config.openweather_api_key is None
+    assert config.newsapi_api_key is None
 
 
 def test_load_config_reads_env(monkeypatch):
-    """三个密钥各自独立读取"""
+    """各密钥独立读取，互不影响"""
     monkeypatch.setenv("TMDB_API_KEY", "only-tmdb")
 
     config = load_config()
 
     assert config.tmdb_api_key == "only-tmdb"
     assert config.dashscope_api_key == "test-dashscope-key"
+    assert config.newsapi_api_key == "test-newsapi-key"
 
 
 def test_require_returns_configured_value():

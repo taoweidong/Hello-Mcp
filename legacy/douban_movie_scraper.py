@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 豆瓣电影Top250爬虫
 使用Playwright和BeautifulSoup提取豆瓣电影详细信息

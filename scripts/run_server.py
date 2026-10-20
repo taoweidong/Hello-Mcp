@@ -16,21 +16,27 @@ SERVER_MODULES = {
 
 def load_server(name: str):
     """按名字导入服务器模块"""
-    module = importlib.import_module(SERVER_MODULES[name])
+    module_path = SERVER_MODULES[name]
+    module = importlib.import_module(module_path)
     if not hasattr(module, "mcp"):
-        raise AttributeError(f"模块 {SERVER_MODULES[name]} 未定义 mcp 对象")
+        raise AttributeError(f"模块 {module_path} 未定义 mcp 对象")
+    if not hasattr(module, "PORT"):
+        raise AttributeError(f"模块 {module_path} 未定义 PORT")
     return module
 
 
 def print_usage():
-    """打印使用说明"""
+    """打印使用说明，单个模块不可用时不影响其余条目"""
     print("用法：python scripts/run_server.py <服务器名称>")
     print()
     print("可用服务器：")
     for name, module_path in SERVER_MODULES.items():
-        module = importlib.import_module(module_path)
-        summary = (module.__doc__ or "").strip().splitlines()[0] if module.__doc__ else ""
-        print(f"  {name:<8} - {summary} (端口 {module.PORT})")
+        try:
+            module = importlib.import_module(module_path)
+            summary = (module.__doc__ or "").strip().splitlines()[0] if module.__doc__ else ""
+            print(f"  {name:<8} - {summary} (端口 {module.PORT})")
+        except (ImportError, AttributeError) as e:
+            print(f"  {name:<8} - 不可用（{e}）")
     print()
     print("示例：")
     print("  python scripts/run_server.py qwen")
@@ -49,7 +55,12 @@ def main():
         print_usage()
         sys.exit(1)
 
-    module = load_server(server_name)
+    try:
+        module = load_server(server_name)
+    except (ImportError, AttributeError) as e:
+        print(f"错误：无法加载服务器 '{server_name}': {e}")
+        sys.exit(1)
+
     port = module.PORT
 
     print(f"启动 {server_name} 服务器 (端口 {port})...")

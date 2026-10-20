@@ -15,9 +15,10 @@ def mock_generation(monkeypatch):
     def fake_call(**kwargs):
         calls.append(kwargs)
         return SimpleNamespace(
+            status_code=200,
             output=SimpleNamespace(
                 choices=[SimpleNamespace(message=SimpleNamespace(content="Mock response"))]
-            )
+            ),
         )
 
     monkeypatch.setattr(qwen_agent, "Generation", SimpleNamespace(call=fake_call))
@@ -28,6 +29,10 @@ class _Boom:
     @staticmethod
     def call(**kwargs):
         raise ValueError("API Error")
+
+
+def _error_response(status_code: int = 401, code: str = "InvalidApiKey", message: str = "bad key"):
+    return SimpleNamespace(status_code=status_code, code=code, message=message, output=None)
 
 
 def test_ask_qwen_returns_answer(mock_generation):
@@ -64,10 +69,60 @@ def test_ask_qwen_raises_when_key_missing(mock_generation, monkeypatch):
         qwen_agent.ask_qwen.fn("测试问题")
 
 
-def test_code_review_includes_code_in_prompt(mock_generation):
+def test_ask_qwen_surfaces_dashscope_error(monkeypatch, recording_ctx):
+    """DashScope 返回非 200 时给出状态码与原因，而不是 cryptic AttributeError"""
+    monkeypatch.setattr(
+        qwen_agent,
+        "Generation",
+        SimpleNamespace(call=lambda **kwargs: _error_response()),
+    )
+
+    with pytest.raises(RuntimeError, match="调用 Qwen 模型失败") as excinfo:
+        qwen_agent.ask_qwen.fn("测试问题", recording_ctx)
+
+    assert "DashScope 返回错误 401" in str(excinfo.value)
+    assert isinstance(excinfo.value.__cause__, RuntimeError)
+    assert any("DashScope 返回错误 401" in msg for msg in recording_ctx.errors)
+
+
+def test_ask_qwen_rejects_empty_choices(monkeypatch):
+    monkeypatch.setattr(
+        qwen_agent,
+        "Generation",
+        SimpleNamespace(
+            call=lambda **kwargs: SimpleNamespace(
+                status_code=200,
+                output=SimpleNamespace(choices=[]),
+            )
+        ),
+    )
+
+    with pytest.raises(RuntimeError, match="未返回有效结果"):
+        qwen_agent.ask_qwen.fn("测试问题")
+
+
+def test_ask_qwen_rejects_empty_content(monkeypatch):
+    monkeypatch.setattr(
+        qwen_agent,
+        "Generation",
+        SimpleNamespace(
+            call=lambda **kwargs: SimpleNamespace(
+                status_code=200,
+                output=SimpleNamespace(
+                    choices=[SimpleNamespace(message=SimpleNamespace(content=""))]
+                ),
+            )
+        ),
+    )
+
+    with pytest.raises(RuntimeError, match="空内容"):
+        qwen_agent.ask_qwen.fn("测试问题")
+
+
+async def test_code_review_includes_code_in_prompt(mock_generation):
     code = "def foo(): pass"
 
-    result = qwen_agent.code_review.fn(code)
+    result = await qwen_agent.code_review.fn(code)
 
     assert result == "Mock response"
     kwargs = mock_generation[0]
@@ -75,19 +130,20 @@ def test_code_review_includes_code_in_prompt(mock_generation):
     assert code in kwargs["messages"][1]["content"]
 
 
-def test_tools_log_through_context(mock_generation, recording_ctx):
+async def test_tools_log_through_context(mock_generation, recording_ctx):
     qwen_agent.ask_qwen.fn("测试问题", recording_ctx)
-    qwen_agent.code_review.fn("def foo(): pass", recording_ctx)
+    await qwen_agent.code_review.fn("def foo(): pass", recording_ctx)
 
     assert any("正在向 Qwen 提问" in msg for msg in recording_ctx.infos)
     assert any("Qwen 回答" in msg for msg in recording_ctx.infos)
     assert "代码审查完成" in recording_ctx.infos
 
 
-def test_code_review_raises_on_failure_with_cause(monkeypatch):
+async def test_code_review_raises_on_failure_with_cause(monkeypatch, recording_ctx):
     monkeypatch.setattr(qwen_agent, "Generation", _Boom)
 
     with pytest.raises(RuntimeError, match="代码审查失败") as excinfo:
-        qwen_agent.code_review.fn("def foo(): pass")
+        await qwen_agent.code_review.fn("def foo(): pass", recording_ctx)
 
     assert isinstance(excinfo.value.__cause__, ValueError)
+    assert any("代码审查失败" in msg for msg in recording_ctx.errors)

@@ -26,7 +26,7 @@ def create_session(timeout: int = 10, retries: int = 3) -> requests.Session:
 
     Args:
         timeout: 默认请求超时时间（秒），调用点显式传 timeout 时以调用点为准
-        retries: 最大重试次数，针对 429/5xx
+        retries: 最大重试次数，针对 429/5xx，仅重试 GET/HEAD 等安全方法
 
     Returns:
         配置好的 requests Session
@@ -36,6 +36,7 @@ def create_session(timeout: int = 10, retries: int = 3) -> requests.Session:
         total=retries,
         backoff_factor=1,
         status_forcelist=[429, 500, 502, 503, 504],
+        allowed_methods=frozenset({"GET", "HEAD"}),
     )
     adapter = HTTPAdapter(max_retries=retry_strategy)
     session.mount("https://", adapter)

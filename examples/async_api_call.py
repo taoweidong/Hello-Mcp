@@ -3,7 +3,7 @@
 import asyncio
 import platform
 
-from dashscope.aigc.generation import AioGeneration
+from dashscope import AioGeneration
 
 from hello_mcp.config import load_config, require
 
@@ -21,6 +21,10 @@ async def task(api_key: str, question: str):
         ],
         result_format="message",
     )
+
+    if response.status_code != 200:
+        print(f"调用失败：{response.code} {response.message}")
+        return
 
     print(f"模型回复：{response.output.choices[0].message.content}")
 

@@ -1,6 +1,10 @@
 """天气查询 MCP 服务器"""
 
+from typing import Annotated
+
 from fastmcp import Context, FastMCP
+from pydantic import Field
+from typing_extensions import TypedDict
 
 from hello_mcp.config import load_config, require
 from hello_mcp.utils.http_client import create_session
@@ -11,9 +15,43 @@ PORT = 8001
 http_session = create_session()
 
 _BASE_URL = "https://api.openweathermap.org/data/2.5"
+_MAX_FORECAST_DAYS = 5
+
+_TOOL_ANNOTATIONS = {
+    "readOnlyHint": True,
+    "destructiveHint": False,
+    "openWorldHint": True,
+}
 
 
-def _fetch_current_weather(city: str, api_key: str) -> dict:
+class WeatherInfo(TypedDict):
+    city: str
+    country: str
+    temperature: float
+    feels_like: float
+    humidity: int
+    pressure: int
+    description: str
+    wind_speed: float
+
+
+class ForecastItem(TypedDict):
+    datetime: str
+    temperature: float
+    feels_like: float
+    humidity: int
+    description: str
+    wind_speed: float
+
+
+class WeatherError(TypedDict):
+    error: str
+
+
+CityWeather = WeatherInfo | WeatherError
+
+
+def _fetch_current_weather(city: str, api_key: str) -> WeatherInfo:
     """拉取单个城市的当前天气（供工具与城市对比复用）"""
     response = http_session.get(
         f"{_BASE_URL}/weather",
@@ -34,9 +72,9 @@ def _fetch_current_weather(city: str, api_key: str) -> dict:
     }
 
 
-def _fetch_forecast(city: str, api_key: str, days: int) -> list[dict]:
-    """拉取并按天去重，取前 days 天"""
-    days = max(1, min(days, 7))
+def _fetch_forecast(city: str, api_key: str, days: int) -> list[ForecastItem]:
+    """拉取并按天去重，每个日期取首个 3 小时时段作为代表"""
+    days = max(1, min(days, _MAX_FORECAST_DAYS))
 
     response = http_session.get(
         f"{_BASE_URL}/forecast",
@@ -45,7 +83,7 @@ def _fetch_forecast(city: str, api_key: str, days: int) -> list[dict]:
     response.raise_for_status()
     data = response.json()
 
-    forecasts = []
+    forecasts: list[ForecastItem] = []
     processed_dates = set()
     for item in data["list"]:
         date = item["dt_txt"].split(" ")[0]
@@ -65,8 +103,11 @@ def _fetch_forecast(city: str, api_key: str, days: int) -> list[dict]:
     return forecasts
 
 
-@mcp.tool
-def get_current_weather(city: str, ctx: Context | None = None) -> dict:
+@mcp.tool(title="当前天气", annotations=_TOOL_ANNOTATIONS)
+def get_current_weather(
+    city: Annotated[str, Field(min_length=1, description="城市名称，例如 Beijing 或 北京")],
+    ctx: Context | None = None,
+) -> WeatherInfo:
     """获取指定城市的当前天气信息
 
     Args:
@@ -94,13 +135,23 @@ def get_current_weather(city: str, ctx: Context | None = None) -> dict:
     return weather_info
 
 
-@mcp.tool
-def get_weather_forecast(city: str, days: int = 5, ctx: Context | None = None) -> list:
+@mcp.tool(title="天气预报", annotations=_TOOL_ANNOTATIONS)
+def get_weather_forecast(
+    city: Annotated[str, Field(min_length=1, description="城市名称")],
+    days: Annotated[
+        int,
+        Field(ge=1, le=_MAX_FORECAST_DAYS, description="预报天数（1-5）"),
+    ] = 5,
+    ctx: Context | None = None,
+) -> list[ForecastItem]:
     """获取指定城市的天气预报
+
+    OpenWeatherMap 免费 5 天预报接口最多覆盖 5 天；
+    每个日期取上游返回的首个 3 小时时段作为代表。
 
     Args:
         city: 城市名称
-        days: 预报天数（默认 5 天，最大 7 天）
+        days: 预报天数（默认 5 天，最大 5 天）
 
     Returns:
         包含未来几天天气预报的列表
@@ -124,8 +175,14 @@ def get_weather_forecast(city: str, days: int = 5, ctx: Context | None = None) -
     return forecasts
 
 
-@mcp.tool
-def compare_cities_weather(cities: list[str], ctx: Context | None = None) -> dict:
+@mcp.tool(title="城市天气对比", annotations=_TOOL_ANNOTATIONS)
+def compare_cities_weather(
+    cities: Annotated[
+        list[Annotated[str, Field(min_length=1)]],
+        Field(min_length=1, description="要比较的城市名称列表（至少一个）"),
+    ],
+    ctx: Context | None = None,
+) -> dict[str, CityWeather]:
     """比较多个城市的当前天气
 
     Args:
@@ -139,7 +196,7 @@ def compare_cities_weather(cities: list[str], ctx: Context | None = None) -> dic
     if ctx:
         ctx.info(f"正在比较 {len(cities)} 个城市的天气...")
 
-    weather_comparison = {}
+    weather_comparison: dict[str, CityWeather] = {}
     for city in cities:
         try:
             weather_comparison[city] = _fetch_current_weather(city, api_key)

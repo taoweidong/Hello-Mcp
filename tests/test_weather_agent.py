@@ -100,19 +100,21 @@ def test_get_weather_forecast_dedupes_by_day(stub_weather):
 
 
 def test_get_weather_forecast_clamps_days(stub_weather):
+    """回归：OWM 免费 5 天预报接口最多只返回 5 天"""
     stub_weather({"Beijing": _forecast_payload([f"2024-01-0{i}" for i in range(1, 10)])})
 
-    assert len(_get_weather_forecast("Beijing", days=99)) == 7
+    assert len(_get_weather_forecast("Beijing", days=99)) == 5
     assert len(_get_weather_forecast("Beijing", days=0)) == 1
 
 
-def test_get_weather_forecast_raises_on_http_status_error(stub_weather):
+def test_get_weather_forecast_raises_on_http_status_error(stub_weather, recording_ctx):
     stub_weather({"Beijing": {"cod": 401, "message": "Invalid API key"}}, status=401)
 
     with pytest.raises(RuntimeError, match="获取天气预报失败") as excinfo:
-        _get_weather_forecast("Beijing")
+        _get_weather_forecast("Beijing", ctx=recording_ctx)
 
     assert isinstance(excinfo.value.__cause__, requests.HTTPError)
+    assert any("获取天气预报失败" in msg for msg in recording_ctx.errors)
 
 
 def test_compare_cities_weather_degrades_per_city(stub_weather):

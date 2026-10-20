@@ -10,8 +10,10 @@ requires-python = ">=3.10"
 dependencies = [
     "dashscope>=1.25.2",
     "fastmcp>=2.13.1",
+    "pydantic>=2.0",
     "python-dotenv>=1.0.0",
     "requests>=2.32.5",
+    "typing-extensions>=4.12",
 ]
 
 [tool.setuptools.packages.find]
@@ -38,8 +40,16 @@ line-length = 100
 target-version = "py310"
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "W"]
+select = ["B", "E", "F", "I", "SIM", "UP", "W"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+
+[tool.coverage.run]
+source = ["src"]
+branch = true
+
+[tool.coverage.report]
+show_missing = true
+fail_under = 90

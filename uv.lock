@@ -970,8 +970,10 @@ source = { editable = "." }
 dependencies = [
     { name = "dashscope" },
     { name = "fastmcp" },
+    { name = "pydantic" },
     { name = "python-dotenv" },
     { name = "requests" },
+    { name = "typing-extensions" },
 ]
 
 [package.optional-dependencies]
@@ -997,6 +999,7 @@ requires-dist = [
     { name = "openpyxl", marker = "extra == 'scrape'", specifier = ">=3.1.5" },
     { name = "pandas", marker = "extra == 'scrape'", specifier = ">=2.3.3" },
     { name = "playwright", marker = "extra == 'scrape'", specifier = ">=1.57.0" },
+    { name = "pydantic", specifier = ">=2.0" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },
     { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.24" },
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=6.0" },
@@ -1004,6 +1007,7 @@ requires-dist = [
     { name = "python-dotenv", specifier = ">=1.0.0" },
     { name = "requests", specifier = ">=2.32.5" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.4" },
+    { name = "typing-extensions", specifier = ">=4.12" },
 ]
 provides-extras = ["dev", "scrape"]
 

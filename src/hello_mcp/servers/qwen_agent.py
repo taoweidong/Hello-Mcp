@@ -1,12 +1,42 @@
 """Qwen AI 聊天 + 代码审查 MCP 服务器"""
 
+import asyncio
+from typing import Annotated, Any
+
 from dashscope import Generation
 from fastmcp import Context, FastMCP
+from pydantic import Field
 
 from hello_mcp.config import load_config, require
 
 mcp = FastMCP("Aliyun Qwen Agent")
 PORT = 8000
+
+_TOOL_ANNOTATIONS = {
+    "readOnlyHint": True,
+    "destructiveHint": False,
+    "openWorldHint": True,
+}
+
+
+def _extract_content(response: Any) -> str:
+    """校验 DashScope 响应并取出首个回复内容"""
+    status_code = getattr(response, "status_code", 200)
+    if status_code != 200:
+        code = getattr(response, "code", "") or ""
+        message = getattr(response, "message", "") or ""
+        raise RuntimeError(f"DashScope 返回错误 {status_code}: {code} {message}".strip())
+
+    output = getattr(response, "output", None)
+    choices = getattr(output, "choices", None) if output is not None else None
+    if not choices:
+        raise RuntimeError("DashScope 未返回有效结果")
+
+    message = getattr(choices[0], "message", None)
+    content = getattr(message, "content", None)
+    if not content:
+        raise RuntimeError("DashScope 返回空内容")
+    return content
 
 
 def _ask_model(api_key: str, system_prompt: str, user_prompt: str) -> str:
@@ -21,11 +51,14 @@ def _ask_model(api_key: str, system_prompt: str, user_prompt: str) -> str:
         result_format="message",
     )
 
-    return response.output.choices[0].message.content
+    return _extract_content(response)
 
 
-@mcp.tool
-def ask_qwen(question: str, ctx: Context | None = None) -> str:
+@mcp.tool(title="提问 Qwen", annotations=_TOOL_ANNOTATIONS)
+def ask_qwen(
+    question: Annotated[str, Field(min_length=1, description="用户提出的问题")],
+    ctx: Context | None = None,
+) -> str:
     """使用阿里云 Qwen 模型回答问题
 
     Args:
@@ -53,9 +86,15 @@ def ask_qwen(question: str, ctx: Context | None = None) -> str:
     return answer
 
 
-@mcp.tool
-def code_review(code: str, ctx: Context | None = None) -> str:
+@mcp.tool(title="代码审查", annotations=_TOOL_ANNOTATIONS)
+async def code_review(
+    code: Annotated[str, Field(min_length=1, description="待审查的代码")],
+    ctx: Context | None = None,
+) -> str:
     """对代码进行审查并提供改进建议
+
+    该工具使用 async 写法：DashScope 同步 SDK 通过 asyncio.to_thread 桥接，
+    避免阻塞 MCP 事件循环，可作为异步工具模板。
 
     Args:
         code: 待审查的代码
@@ -78,7 +117,12 @@ def code_review(code: str, ctx: Context | None = None) -> str:
     """
 
     try:
-        review_result = _ask_model(api_key, "You are a professional Python code reviewer.", prompt)
+        review_result = await asyncio.to_thread(
+            _ask_model,
+            api_key,
+            "You are a professional Python code reviewer.",
+            prompt,
+        )
     except Exception as e:
         error_msg = f"代码审查失败: {e}"
         if ctx:

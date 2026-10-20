@@ -50,3 +50,11 @@ def test_retry_policy_is_mounted():
         assert adapter.max_retries.total == 4
         assert adapter.max_retries.backoff_factor == 1
         assert set(adapter.max_retries.status_forcelist) == {429, 500, 502, 503, 504}
+
+
+def test_only_safe_methods_are_retried():
+    """共享 Session 不应默认重试 POST/PUT 等非安全方法"""
+    session = create_session(retries=2)
+    adapter = session.get_adapter("https://api.example.test/x")
+
+    assert adapter.max_retries.allowed_methods == frozenset({"GET", "HEAD"})

@@ -2,6 +2,9 @@
 
 import requests
 
+from hello_mcp.config import load_config, require
+from hello_mcp.utils.http_client import create_session
+
 
 def get_top_headlines() -> list | None:
     """获取美国头条新闻
@@ -9,17 +12,19 @@ def get_top_headlines() -> list | None:
     Returns:
         文章列表，失败时返回 None
     """
+    api_key = require(load_config().newsapi_api_key, "NEWSAPI_KEY")
     url = "https://newsapi.org/v2/top-headlines"
     params = {
         "country": "us",
-        "apiKey": "YOUR_KEY",
+        "apiKey": api_key,
     }
 
     try:
-        response = requests.get(url, params=params)
-        response.raise_for_status()
+        with create_session() as session:
+            response = session.get(url, params=params)
+            response.raise_for_status()
+            data = response.json()
 
-        data = response.json()
         articles = data.get("articles", [])
         print(articles)
 

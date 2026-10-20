@@ -15,6 +15,7 @@ API_KEYS = {
     "DASHSCOPE_API_KEY": "test-dashscope-key",
     "TMDB_API_KEY": "test-tmdb-key",
     "OPENWEATHER_API_KEY": "test-weather-key",
+    "NEWSAPI_KEY": "test-newsapi-key",
 }
 
 

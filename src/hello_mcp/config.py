@@ -17,6 +17,7 @@ class Config:
     dashscope_api_key: str | None = None
     tmdb_api_key: str | None = None
     openweather_api_key: str | None = None
+    newsapi_api_key: str | None = None
 
 
 def load_config() -> Config:
@@ -29,6 +30,7 @@ def load_config() -> Config:
         dashscope_api_key=os.getenv("DASHSCOPE_API_KEY"),
         tmdb_api_key=os.getenv("TMDB_API_KEY"),
         openweather_api_key=os.getenv("OPENWEATHER_API_KEY"),
+        newsapi_api_key=os.getenv("NEWSAPI_KEY"),
     )
 
 

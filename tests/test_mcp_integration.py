@@ -4,6 +4,8 @@
 工具能被 MCP 协议发现、参数 schema 正确（ctx 不外泄）、经协议调用返回预期结果。
 """
 
+from types import SimpleNamespace
+
 import pytest
 from fastmcp import Client
 
@@ -32,6 +34,78 @@ async def test_tool_schema_excludes_injected_context():
     properties = tools[0].inputSchema["properties"]
     assert "n" in properties
     assert "ctx" not in properties
+
+
+async def test_tools_expose_title_and_readonly_annotations():
+    """MCP 客户端/Inspector 依赖这些元数据展示合适的操作提示"""
+    for server in EXPECTED_TOOLS:
+        async with Client(server) as client:
+            tools = await client.list_tools()
+
+        for tool in tools:
+            assert tool.title, f"{tool.name} 缺少标题"
+            assert tool.annotations is not None
+            assert tool.annotations.readOnlyHint is True
+            assert tool.annotations.destructiveHint is False
+            assert tool.annotations.openWorldHint is True
+
+
+async def test_tmdb_schema_exposes_constraints_and_output_shape():
+    async with Client(tmdb_server.mcp) as client:
+        tool = (await client.list_tools())[0]
+
+    n_schema = tool.inputSchema["properties"]["n"]
+    assert n_schema["minimum"] == 1
+    assert n_schema["maximum"] == 200
+    assert n_schema["description"]
+
+    movie_schema = tool.outputSchema["$defs"]["Movie"]
+    assert set(movie_schema["required"]) == {"title", "year", "rating", "overview"}
+
+
+async def test_weather_schema_exposes_limits_and_output_shape():
+    async with Client(weather_agent.mcp) as client:
+        tools = {tool.name: tool for tool in await client.list_tools()}
+
+    forecast = tools["get_weather_forecast"]
+    forecast_props = forecast.inputSchema["properties"]
+    assert forecast_props["days"]["minimum"] == 1
+    assert forecast_props["days"]["maximum"] == 5
+    assert forecast_props["city"]["minLength"] == 1
+    assert "ForecastItem" in forecast.outputSchema["$defs"]
+
+    compare = tools["compare_cities_weather"]
+    cities_schema = compare.inputSchema["properties"]["cities"]
+    assert cities_schema["minItems"] == 1
+    assert cities_schema["items"]["minLength"] == 1
+    assert "anyOf" in compare.outputSchema["additionalProperties"]
+
+
+async def test_invalid_tool_arguments_are_rejected():
+    async with Client(tmdb_server.mcp) as client:
+        with pytest.raises(Exception, match="greater than or equal to 1"):
+            await client.call_tool("get_top_movies", {"n": 0})
+
+
+async def test_async_tool_calls_through_mcp(monkeypatch):
+    """code_review 是 async 工具，验证 FastMCP 能正确 await 并返回结果"""
+    monkeypatch.setattr(
+        qwen_agent,
+        "Generation",
+        SimpleNamespace(
+            call=lambda **kwargs: SimpleNamespace(
+                status_code=200,
+                output=SimpleNamespace(
+                    choices=[SimpleNamespace(message=SimpleNamespace(content="异步回复"))]
+                ),
+            )
+        ),
+    )
+
+    async with Client(qwen_agent.mcp) as client:
+        result = await client.call_tool("code_review", {"code": "def foo(): pass"})
+
+    assert result.structured_content["result"] == "异步回复"
 
 
 async def test_tmdb_call_through_mcp_returns_structured_data(monkeypatch, make_response):
